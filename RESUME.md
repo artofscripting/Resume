@@ -1,4 +1,4 @@
-![Logo](ai-auditor-logo.png)
+<img src="ai-auditor-logo.png" height="30">
 
 **Stephen "Art" Le Bel**  
 artofscripting@gmail.com
