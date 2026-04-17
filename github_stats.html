@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>artofscripting · GitHub Stats Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --orange: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header img {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+    }
+    header h1 { font-size: 22px; }
+    header p  { color: var(--muted); font-size: 12px; }
+
+    /* ── Summary stat pills ── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      padding: 24px 32px 0;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+    .stat-card .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Tabs ── */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      padding: 20px 32px 0;
+      border-bottom: 1px solid var(--border);
+      margin-top: 20px;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 14px;
+      font-family: inherit;
+      padding: 10px 20px;
+      margin-bottom: -1px;
+      transition: color .15s, border-color .15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Charts grid ── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+      gap: 20px;
+      padding: 24px 32px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      overflow: hidden;
+    }
+    .chart-card-full {
+      grid-column: 1 / -1;
+    }
+    .chart-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+    .chart-card svg { display: block; width: 100%; overflow: visible; }
+
+    /* ── Repo cards grid ── */
+    .repo-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 20px 32px 0;
+      flex-wrap: wrap;
+    }
+    .repo-controls input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      padding: 7px 12px;
+      width: 240px;
+      outline: none;
+    }
+    .repo-controls input:focus { border-color: var(--accent); }
+    .repo-controls select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      padding: 7px 10px;
+      outline: none;
+      cursor: pointer;
+    }
+    .repo-count { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+    .repo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+      padding: 16px 32px 32px;
+    }
+    .repo-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px 20px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color .15s, transform .15s;
+    }
+    .repo-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .repo-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .repo-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      word-break: break-word;
+    }
+    .repo-name:hover { text-decoration: underline; }
+    .repo-badges {
+      display: flex;
+      gap: 5px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-fork     { background: #2d2208; color: var(--orange); border: 1px solid #4a3800; }
+    .badge-archived { background: #1c1c1c; color: var(--muted);  border: 1px solid var(--border); }
+    .badge-private  { background: #1c1207; color: #d29922;        border: 1px solid #4a3000; }
+    .repo-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .repo-desc.empty { font-style: italic; opacity: .5; }
+    .repo-stats {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .repo-stat {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .repo-stat span.num { color: var(--text); font-weight: 600; }
+    .lang-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .repo-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 2px;
+    }
+    .repo-lang {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .repo-updated { font-size: 11px; color: var(--muted); }
+    .repo-dates {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .repo-date { font-size: 11px; color: var(--muted); }
+    .repo-date strong { color: var(--text); }
+    .repo-lang-section {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .repo-lang-pie { flex-shrink: 0; }
+    .repo-lang-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 0;
+    }
+    .repo-lang-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .repo-lang-row .lang-name { color: var(--text); min-width: 70px; }
+    .repo-lang-row .lang-loc  { margin-left: auto; color: var(--muted); white-space: nowrap; }
+    .repo-lang-bar-wrap {
+      flex: 1;
+      height: 4px;
+      background: #21262d;
+      border-radius: 2px;
+      overflow: hidden;
+      min-width: 40px;
+    }
+    .repo-lang-bar { height: 100%; border-radius: 2px; }
+    .repo-topics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .topic-tag {
+      font-size: 11px;
+      background: #1c2d3f;
+      color: #58a6ff;
+      border: 1px solid #1f4080;
+      border-radius: 10px;
+      padding: 1px 8px;
+    }
+
+    /* ── Tooltip ── */
+    .tooltip {
+      position: fixed;
+      background: #1c2128;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .15s;
+      z-index: 9999;
+      max-width: 220px;
+    }
+    .tooltip strong { color: var(--accent); }
+
+    /* Axes */
+    .axis text { fill: var(--muted); font-size: 11px; }
+    .axis path, .axis line { stroke: var(--border); }
+    .legend-item text { fill: var(--text); font-size: 11px; }
+    .bar-value { fill: var(--text); font-size: 11px; }
+    .sankey-node-label { fill: var(--text); font-size: 11px; dominant-baseline: middle; }
+    .sankey-caption { color: var(--muted); font-size: 12px; margin-top: -6px; margin-bottom: 12px; }
+    .sankey-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .sankey-search {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 10px;
+      min-width: 260px;
+      outline: none;
+    }
+    .sankey-search:focus { border-color: var(--accent); }
+    .sankey-button {
+      background: #1f2937;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      padding: 8px 12px;
+    }
+    .sankey-button:hover { border-color: var(--accent); }
+    .sankey-status { color: var(--muted); font-size: 12px; }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <img src="https://avatars.githubusercontent.com/artofscripting" alt="artofscripting" />
+  <div>
+    <h1>artofscripting</h1>
+    <p>GitHub Stats Dashboard &mdash; generated April 17, 2026 22:18 UTC</p>
+  </div>
+</header>
+
+<!-- Tab bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+  <button class="tab-btn" data-tab="repositories">📁 Repositories</button>
+</div>
+
+<!-- Overview tab -->
+<div class="tab-panel active" id="tab-overview">
+  <div class="charts-grid" id="charts-grid"></div>
+</div>
+
+<!-- Repositories tab -->
+<div class="tab-panel" id="tab-repositories">
+  <div class="repo-controls">
+    <input type="text" id="repo-search" placeholder="Search repositories…" />
+    <select id="repo-sort">
+      <option value="stars">Sort: Stars</option>
+      <option value="forks">Sort: Forks</option>
+      <option value="issues">Sort: Open Issues</option>
+      <option value="size">Sort: Size</option>
+      <option value="updated">Sort: Last Updated</option>
+      <option value="name">Sort: Name</option>
+    </select>
+    <select id="repo-filter-lang">
+      <option value="">All Languages</option>
+    </select>
+    <select id="repo-filter-type">
+      <option value="">All Types</option>
+      <option value="source">Source only</option>
+      <option value="fork">Forks only</option>
+      <option value="archived">Archived only</option>
+    </select>
+    <span class="repo-count" id="repo-count"></span>
+  </div>
+  <div class="repo-grid" id="repo-grid"></div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+<footer>Generated with github_stats.py &middot; Data via GitHub CLI</footer>
+
+<script>
+const DATA = {"username": "artofscripting", "generated_at": "2026-04-17T22:18:31.517370+00:00", "summary": {"total_repos": 27, "total_stars": 15, "total_forks": 2, "total_open_issues": 3, "total_watchers": 15, "total_size_mb": 61.2}, "repos_by_stars": [{"name": "Network-Vector", "value": 13}, {"name": "MC-Money", "value": 1}, {"name": "esp8266wifiAnalyzer", "value": 1}, {"name": "cloudflare-json-ips", "value": 0}, {"name": "azure-json-ips", "value": 0}, {"name": "aws-json-ips", "value": 0}, {"name": "google-dns-ips", "value": 0}, {"name": "WindowsStatsMonitor", "value": 0}, {"name": "Roman-Numeral-to-Decimal-Converter", "value": 0}, {"name": "Chrome-Cast-Remote", "value": 0}, {"name": "secrets_saver", "value": 0}, {"name": "SecretsManager", "value": 0}, {"name": "NPP_Secrets_Manager", "value": 0}, {"name": "VSC_Secrets_Manager", "value": 0}, {"name": "npp-secrets", "value": 0}, {"name": "URLcache2db", "value": 0}, {"name": "function_rate_limiter", "value": 0}, {"name": "MC-Infinite-Inventory", "value": 0}, {"name": "Solar-System-3D-Model", "value": 0}, {"name": "Masscan-Report", "value": 0}], "repos_by_forks": [{"name": "Network-Vector", "value": 1}, {"name": "MC-Money", "value": 1}, {"name": "cloudflare-json-ips", "value": 0}, {"name": "azure-json-ips", "value": 0}, {"name": "aws-json-ips", "value": 0}, {"name": "google-dns-ips", "value": 0}, {"name": "WindowsStatsMonitor", "value": 0}, {"name": "Roman-Numeral-to-Decimal-Converter", "value": 0}, {"name": "Chrome-Cast-Remote", "value": 0}, {"name": "secrets_saver", "value": 0}, {"name": "SecretsManager", "value": 0}, {"name": "NPP_Secrets_Manager", "value": 0}, {"name": "VSC_Secrets_Manager", "value": 0}, {"name": "npp-secrets", "value": 0}, {"name": "URLcache2db", "value": 0}, {"name": "function_rate_limiter", "value": 0}, {"name": "MC-Infinite-Inventory", "value": 0}, {"name": "Solar-System-3D-Model", "value": 0}, {"name": "Masscan-Report", "value": 0}, {"name": "Resume", "value": 0}], "language_bytes": {"Python": 1748084, "HTML": 743775, "CSS": 454428, "Java": 395715, "SCSS": 259108, "C#": 213342, "C++": 201085, "JavaScript": 197882, "PHP": 72099, "C": 53958, "TypeScript": 51716, "Hack": 35430, "PowerShell": 31429, "Rust": 12617, "Go": 12200, "Shell": 8685, "Ruby": 6003, "Dockerfile": 5228, "Batchfile": 3775, "Haskell": 2645, "Groovy": 1135, "MATLAB": 1065, "Lua": 1040, "Perl": 1013, "R": 987, "Dart": 969, "Julia": 963, "Kotlin": 961, "Scala": 955, "Awk": 949, "F#": 937, "Nim": 934, "Elixir": 933, "Swift": 900, "Clojure": 860, "Crystal": 846, "Jupyter Notebook": 72}, "weekly_commits": [{"ts": 1745619511517, "count": 0}, {"ts": 1746224311517, "count": 0}, {"ts": 1746829111517, "count": 0}, {"ts": 1747433911517, "count": 0}, {"ts": 1748038711517, "count": 0}, {"ts": 1748643511517, "count": 0}, {"ts": 1749248311517, "count": 0}, {"ts": 1749853111517, "count": 0}, {"ts": 1750457911517, "count": 0}, {"ts": 1751062711517, "count": 0}, {"ts": 1751667511517, "count": 0}, {"ts": 1752272311517, "count": 0}, {"ts": 1752877111517, "count": 0}, {"ts": 1753481911517, "count": 0}, {"ts": 1754086711517, "count": 0}, {"ts": 1754691511517, "count": 0}, {"ts": 1755296311517, "count": 0}, {"ts": 1755901111517, "count": 0}, {"ts": 1756505911517, "count": 0}, {"ts": 1757110711517, "count": 0}, {"ts": 1757715511517, "count": 0}, {"ts": 1758320311517, "count": 0}, {"ts": 1758925111517, "count": 0}, {"ts": 1759529911517, "count": 0}, {"ts": 1760134711517, "count": 0}, {"ts": 1760739511517, "count": 0}, {"ts": 1761344311517, "count": 0}, {"ts": 1761949111517, "count": 0}, {"ts": 1762553911517, "count": 0}, {"ts": 1763158711517, "count": 0}, {"ts": 1763763511517, "count": 0}, {"ts": 1764368311517, "count": 0}, {"ts": 1764973111517, "count": 0}, {"ts": 1765577911517, "count": 0}, {"ts": 1766182711517, "count": 0}, {"ts": 1766787511517, "count": 0}, {"ts": 1767392311517, "count": 0}, {"ts": 1767997111517, "count": 0}, {"ts": 1768601911517, "count": 0}, {"ts": 1769206711517, "count": 0}, {"ts": 1769811511517, "count": 0}, {"ts": 1770416311517, "count": 0}, {"ts": 1771021111517, "count": 0}, {"ts": 1771625911517, "count": 0}, {"ts": 1772230711517, "count": 0}, {"ts": 1772835511517, "count": 0}, {"ts": 1773440311517, "count": 0}, {"ts": 1774045111517, "count": 0}, {"ts": 1774649911517, "count": 0}, {"ts": 1775254711517, "count": 0}, {"ts": 1775859511517, "count": 0}, {"ts": 1776464311517, "count": 0}], "repos_timeline": [{"name": "PyNmap2ES", "created_at": "2021-01-20T22:18:22Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 3}, {"name": "PyAmass2ES", "created_at": "2021-01-20T22:19:45Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 1}, {"name": "AttackSurfaceDashboard", "created_at": "2021-03-31T20:00:49Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 4492}, {"name": "esp8266wifiAnalyzer", "created_at": "2022-08-13T02:04:25Z", "stars": 1, "forks": 0, "is_fork": false, "size_kb": 2}, {"name": "nginx_log_reviewer", "created_at": "2025-11-03T22:36:13Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 415}, {"name": "WebSite-Security-Scanner", "created_at": "2025-11-05T17:45:32Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 106}, {"name": "Network-Vector", "created_at": "2025-11-06T18:57:57Z", "stars": 13, "forks": 1, "is_fork": false, "size_kb": 639}, {"name": "Web-Vectors", "created_at": "2025-11-07T19:27:52Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 384}, {"name": "Resume", "created_at": "2025-12-21T17:47:23Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 34}, {"name": "MC-Money", "created_at": "2025-12-29T21:24:04Z", "stars": 1, "forks": 1, "is_fork": false, "size_kb": 354}, {"name": "Masscan-Report", "created_at": "2026-01-07T17:47:20Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 182}, {"name": "Solar-System-3D-Model", "created_at": "2026-01-07T22:44:35Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 274}, {"name": "MC-Infinite-Inventory", "created_at": "2026-01-27T19:31:22Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 81}, {"name": "URLcache2db", "created_at": "2026-03-06T20:46:44Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 4}, {"name": "secrets_saver", "created_at": "2026-03-06T21:19:12Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 40}, {"name": "SecretsManager", "created_at": "2026-03-06T21:31:59Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 55195}, {"name": "function_rate_limiter", "created_at": "2026-03-07T14:28:35Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 1}, {"name": "npp-secrets", "created_at": "2026-03-08T12:49:29Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 28}, {"name": "NPP_Secrets_Manager", "created_at": "2026-03-08T12:58:40Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 139}, {"name": "VSC_Secrets_Manager", "created_at": "2026-03-08T15:06:56Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 63}, {"name": "Chrome-Cast-Remote", "created_at": "2026-03-27T15:01:52Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 22}, {"name": "Roman-Numeral-to-Decimal-Converter", "created_at": "2026-03-27T15:27:18Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 19}, {"name": "WindowsStatsMonitor", "created_at": "2026-04-17T16:48:27Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 170}, {"name": "google-dns-ips", "created_at": "2026-04-17T19:07:25Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 25}, {"name": "aws-json-ips", "created_at": "2026-04-17T19:25:39Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 6}, {"name": "azure-json-ips", "created_at": "2026-04-17T19:46:45Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 6}, {"name": "cloudflare-json-ips", "created_at": "2026-04-17T20:08:27Z", "stars": 0, "forks": 0, "is_fork": false, "size_kb": 5}], "topic_counts": {}, "license_counts": {"None": 19, "MIT": 5, "GPL-2.0": 1, "Apache-2.0": 2}, "repos_list": [{"name": "Network-Vector", "full_name": "artofscripting/Network-Vector", "description": "Network Scanning and Graph Reporting", "url": "https://github.com/artofscripting/Network-Vector", "stars": 13, "forks": 1, "watchers": 13, "open_issues": 0, "size_kb": 639, "language": "Python", "languages": {"Python": 470996}, "topics": [], "license": "MIT", "is_fork": false, "is_archived": false, "created_at": "2025-11-06T18:57:57Z", "pushed_at": "2025-12-21T02:17:55Z", "visibility": "public"}, {"name": "MC-Money", "full_name": "artofscripting/MC-Money", "description": "A NeoForge mod for Minecraft 1.21.1 that adds a complete currency system with coins, a personal bank, and a configurable shop.", "url": "https://github.com/artofscripting/MC-Money", "stars": 1, "forks": 1, "watchers": 1, "open_issues": 1, "size_kb": 354, "language": "Java", "languages": {"Java": 243311}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2025-12-29T21:24:04Z", "pushed_at": "2026-01-15T18:06:38Z", "visibility": "public"}, {"name": "esp8266wifiAnalyzer", "full_name": "artofscripting/esp8266wifiAnalyzer", "description": "", "url": "https://github.com/artofscripting/esp8266wifiAnalyzer", "stars": 1, "forks": 0, "watchers": 1, "open_issues": 0, "size_kb": 2, "language": "C++", "languages": {"C++": 5261}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2022-08-13T02:04:25Z", "pushed_at": "2022-08-13T02:04:27Z", "visibility": "public"}, {"name": "cloudflare-json-ips", "full_name": "artofscripting/cloudflare-json-ips", "description": "Python library that resolves Cloudflare-published IP ranges from the authoritative JSON source.", "url": "https://github.com/artofscripting/cloudflare-json-ips", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 5, "language": "Python", "languages": {"Python": 8014}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-04-17T20:08:27Z", "pushed_at": "2026-04-17T20:08:56Z", "visibility": "public"}, {"name": "azure-json-ips", "full_name": "artofscripting/azure-json-ips", "description": "Python library that resolves Azure-published IP ranges from Microsoft's service tags JSON source", "url": "https://github.com/artofscripting/azure-json-ips", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 6, "language": "Python", "languages": {"Python": 11279}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-04-17T19:46:45Z", "pushed_at": "2026-04-17T19:51:45Z", "visibility": "public"}, {"name": "aws-json-ips", "full_name": "artofscripting/aws-json-ips", "description": "Python library that resolves AWS-published IP ranges from the authoritative JSON source.", "url": "https://github.com/artofscripting/aws-json-ips", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 6, "language": "Python", "languages": {"Python": 9979}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-04-17T19:25:39Z", "pushed_at": "2026-04-17T19:28:10Z", "visibility": "public"}, {"name": "google-dns-ips", "full_name": "artofscripting/google-dns-ips", "description": "Python library that resolves Google-published IP ranges from DNS TXT records.", "url": "https://github.com/artofscripting/google-dns-ips", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 25, "language": "Python", "languages": {"Python": 10214}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-04-17T19:07:25Z", "pushed_at": "2026-04-17T19:10:39Z", "visibility": "public"}, {"name": "WindowsStatsMonitor", "full_name": "artofscripting/WindowsStatsMonitor", "description": "", "url": "https://github.com/artofscripting/WindowsStatsMonitor", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 170, "language": "C#", "languages": {"C#": 204007}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-04-17T16:48:27Z", "pushed_at": "2026-04-17T16:55:16Z", "visibility": "public"}, {"name": "Roman-Numeral-to-Decimal-Converter", "full_name": "artofscripting/Roman-Numeral-to-Decimal-Converter", "description": "20 programming languages, plus SQL and AWK", "url": "https://github.com/artofscripting/Roman-Numeral-to-Decimal-Converter", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 19, "language": "Haskell", "languages": {"Haskell": 2645, "Java": 1353, "C#": 1311, "C++": 1293, "C": 1283, "PowerShell": 1216, "Rust": 1174, "Shell": 1152, "Groovy": 1135, "MATLAB": 1065, "Lua": 1040, "Perl": 1013, "R": 987, "Dart": 969, "TypeScript": 965, "Julia": 963, "Kotlin": 961, "Scala": 955, "PHP": 953, "Awk": 949, "JavaScript": 944, "F#": 937, "Nim": 934, "Elixir": 933, "Go": 929, "Swift": 900, "Python": 871, "Clojure": 860, "Crystal": 846, "Ruby": 742}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-03-27T15:27:18Z", "pushed_at": "2026-03-27T15:28:15Z", "visibility": "public"}, {"name": "Chrome-Cast-Remote", "full_name": "artofscripting/Chrome-Cast-Remote", "description": "The missing desktop remote. ", "url": "https://github.com/artofscripting/Chrome-Cast-Remote", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 22, "language": "Python", "languages": {"Python": 57561, "Batchfile": 497}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-03-27T15:01:52Z", "pushed_at": "2026-03-27T15:05:31Z", "visibility": "public"}, {"name": "secrets_saver", "full_name": "artofscripting/secrets_saver", "description": "", "url": "https://github.com/artofscripting/secrets_saver", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 40, "language": "Rust", "languages": {"Rust": 11443, "Go": 11271, "Java": 9988, "PowerShell": 9839, "PHP": 8691, "Python": 8336, "C#": 8024, "TypeScript": 7250, "JavaScript": 6261, "Ruby": 5261, "Shell": 4993}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-03-06T21:19:12Z", "pushed_at": "2026-03-09T21:30:28Z", "visibility": "public"}, {"name": "SecretsManager", "full_name": "artofscripting/SecretsManager", "description": "", "url": "https://github.com/artofscripting/SecretsManager", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 55195, "language": "Python", "languages": {"Python": 81687, "Dockerfile": 451}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-03-06T21:31:59Z", "pushed_at": "2026-03-09T21:16:22Z", "visibility": "public"}, {"name": "NPP_Secrets_Manager", "full_name": "artofscripting/NPP_Secrets_Manager", "description": "", "url": "https://github.com/artofscripting/NPP_Secrets_Manager", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 2, "size_kb": 139, "language": "C++", "languages": {"C++": 194531, "C": 52675, "PowerShell": 20374, "Python": 15250}, "topics": [], "license": "GPL-2.0", "is_fork": false, "is_archived": false, "created_at": "2026-03-08T12:58:40Z", "pushed_at": "2026-04-01T15:55:09Z", "visibility": "public"}, {"name": "VSC_Secrets_Manager", "full_name": "artofscripting/VSC_Secrets_Manager", "description": "", "url": "https://github.com/artofscripting/VSC_Secrets_Manager", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 63, "language": "TypeScript", "languages": {"TypeScript": 43501, "JavaScript": 2916}, "topics": [], "license": "MIT", "is_fork": false, "is_archived": false, "created_at": "2026-03-08T15:06:56Z", "pushed_at": "2026-03-08T15:09:05Z", "visibility": "public"}, {"name": "npp-secrets", "full_name": "artofscripting/npp-secrets", "description": "", "url": "https://github.com/artofscripting/npp-secrets", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 28, "language": "Python", "languages": {"Python": 13591}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-03-08T12:49:29Z", "pushed_at": "2026-03-08T12:57:55Z", "visibility": "public"}, {"name": "URLcache2db", "full_name": "artofscripting/URLcache2db", "description": "", "url": "https://github.com/artofscripting/URLcache2db", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 4, "language": "Python", "languages": {"Python": 4295}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-03-06T20:46:44Z", "pushed_at": "2026-03-07T15:18:50Z", "visibility": "public"}, {"name": "function_rate_limiter", "full_name": "artofscripting/function_rate_limiter", "description": "", "url": "https://github.com/artofscripting/function_rate_limiter", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 1, "language": "Python", "languages": {"Python": 2394}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-03-07T14:28:35Z", "pushed_at": "2026-03-07T14:29:23Z", "visibility": "public"}, {"name": "MC-Infinite-Inventory", "full_name": "artofscripting/MC-Infinite-Inventory", "description": "A magical sack with truly infinite storage capacity. Store unlimited items with unlimited stack sizes, complete with built-in crafting, JEI integration, automation support, and Curios compatibility.", "url": "https://github.com/artofscripting/MC-Infinite-Inventory", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 81, "language": "Java", "languages": {"Java": 141063}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2026-01-27T19:31:22Z", "pushed_at": "2026-01-27T19:47:06Z", "visibility": "public"}, {"name": "Solar-System-3D-Model", "full_name": "artofscripting/Solar-System-3D-Model", "description": "# ðŸŒŒ 3D Solar System Simulator  -  An interactive 3D visualization of our Solar System built with Three.js. Explore planets, moons, dwarf planets, asteroids, and comets in 3D.", "url": "https://github.com/artofscripting/Solar-System-3D-Model", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 274, "language": "HTML", "languages": {"HTML": 93891}, "topics": [], "license": "Apache-2.0", "is_fork": false, "is_archived": false, "created_at": "2026-01-07T22:44:35Z", "pushed_at": "2026-01-07T22:47:14Z", "visibility": "public"}, {"name": "Masscan-Report", "full_name": "artofscripting/Masscan-Report", "description": "A Python tool that generates interactive React-based HTML visualizations from masscan JSON output, featuring a D3.js force-directed network graph.", "url": "https://github.com/artofscripting/Masscan-Report", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 182, "language": "Python", "languages": {"Python": 341235}, "topics": [], "license": "Apache-2.0", "is_fork": false, "is_archived": false, "created_at": "2026-01-07T17:47:20Z", "pushed_at": "2026-01-07T18:02:10Z", "visibility": "public"}, {"name": "Resume", "full_name": "artofscripting/Resume", "description": "artofscripting@gmail.com", "url": "https://github.com/artofscripting/Resume", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 34, "language": "", "languages": {}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2025-12-21T17:47:23Z", "pushed_at": "2025-12-22T13:49:05Z", "visibility": "public"}, {"name": "Web-Vectors", "full_name": "artofscripting/Web-Vectors", "description": "A comprehensive Python-based website security scanner with an enhanced Flask web interface. This tool performs robust security analysis including SSL/TLS testing, vulnerability assessment, compliance checking, and provides professional security reporting with scoring systems.", "url": "https://github.com/artofscripting/Web-Vectors", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 384, "language": "Python", "languages": {"Python": 350552, "HTML": 160220, "Batchfile": 691}, "topics": [], "license": "MIT", "is_fork": false, "is_archived": false, "created_at": "2025-11-07T19:27:52Z", "pushed_at": "2025-12-21T17:23:49Z", "visibility": "public"}, {"name": "nginx_log_reviewer", "full_name": "artofscripting/nginx_log_reviewer", "description": "A tool to review access logs from nginx", "url": "https://github.com/artofscripting/nginx_log_reviewer", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 415, "language": "Python", "languages": {"Python": 95780, "HTML": 63855, "Batchfile": 2587, "Shell": 1568}, "topics": [], "license": "MIT", "is_fork": false, "is_archived": false, "created_at": "2025-11-03T22:36:13Z", "pushed_at": "2025-11-19T16:07:33Z", "visibility": "public"}, {"name": "WebSite-Security-Scanner", "full_name": "artofscripting/WebSite-Security-Scanner", "description": "# WebSite Security Scanner ðŸ”’  A comprehensive Python-based website security scanner with an enhanced Flask web interface. This tool performs robust security analysis including SSL/TLS testing, vulnerability assessment, compliance checking, and provides professional security reporting.", "url": "https://github.com/artofscripting/WebSite-Security-Scanner", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 106, "language": "Python", "languages": {"Python": 227941, "HTML": 135396, "CSS": 17868, "JavaScript": 3227}, "topics": [], "license": "MIT", "is_fork": false, "is_archived": false, "created_at": "2025-11-05T17:45:32Z", "pushed_at": "2025-11-05T17:53:43Z", "visibility": "public"}, {"name": "AttackSurfaceDashboard", "full_name": "artofscripting/AttackSurfaceDashboard", "description": "", "url": "https://github.com/artofscripting/AttackSurfaceDashboard", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 4492, "language": "CSS", "languages": {"CSS": 436560, "HTML": 290413, "SCSS": 259108, "JavaScript": 184534, "PHP": 62455, "Hack": 35430, "Python": 32554, "Dockerfile": 4777, "Shell": 972, "Jupyter Notebook": 72}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2021-03-31T20:00:49Z", "pushed_at": "2021-04-01T13:59:03Z", "visibility": "public"}, {"name": "PyNmap2ES", "full_name": "artofscripting/PyNmap2ES", "description": "PyNmap2ES", "url": "https://github.com/artofscripting/PyNmap2ES", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 3, "language": "Python", "languages": {"Python": 4069}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2021-01-20T22:18:22Z", "pushed_at": "2021-01-23T00:28:15Z", "visibility": "public"}, {"name": "PyAmass2ES", "full_name": "artofscripting/PyAmass2ES", "description": "PyAmass2ES", "url": "https://github.com/artofscripting/PyAmass2ES", "stars": 0, "forks": 0, "watchers": 0, "open_issues": 0, "size_kb": 1, "language": "Python", "languages": {"Python": 1486}, "topics": [], "license": "None", "is_fork": false, "is_archived": false, "created_at": "2021-01-20T22:19:45Z", "pushed_at": "2021-01-20T22:19:51Z", "visibility": "public"}]};
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+
+const tip = document.getElementById("tooltip");
+
+function showTip(html, evt) {
+  tip.innerHTML = html;
+  tip.style.opacity = 1;
+  moveTip(evt);
+}
+function moveTip(evt) {
+  const pad = 12;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  if (x + 240 > window.innerWidth)  x = evt.clientX - 240 - pad;
+  if (y + 100 > window.innerHeight) y = evt.clientY - 100 - pad;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.style.opacity = 0; }
+
+function fmt(n) {
+  if (typeof n !== "number") return n;
+  if (n >= 1e6) return (n/1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n/1e3).toFixed(1) + "k";
+  return n;
+}
+
+function relTime(iso) {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  const d = Math.floor(diff / 86400000);
+  if (d === 0) return "today";
+  if (d === 1) return "yesterday";
+  if (d < 30)  return d + "d ago";
+  if (d < 365) return Math.floor(d/30) + "mo ago";
+  return Math.floor(d/365) + "y ago";
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+// ── Colour palette ─────────────────────────────────────────────────────────
+
+const PALETTE = [
+  "#58a6ff","#3fb950","#d29922","#f85149","#bc8cff",
+  "#79c0ff","#56d364","#e3b341","#ffa198","#d2a8ff",
+  "#1f6feb","#238636","#9e6a03","#da3633","#8957e5",
+  "#388bfd","#2ea043","#bb8009","#cf222e","#6e40c9",
+];
+function color(i) { return PALETTE[i % PALETTE.length]; }
+
+// Map language → consistent colour
+const LANG_COLORS = {};
+Object.keys(DATA.language_bytes).forEach((lang, i) => { LANG_COLORS[lang] = color(i); });
+
+// ── Chart helpers ──────────────────────────────────────────────────────────
+
+function addChartCard(title, extraClass = "") {
+  const wrap = document.createElement("div");
+  wrap.className = `chart-card ${extraClass}`.trim();
+  wrap.innerHTML = `<h2>${title}</h2>`;
+  document.getElementById("charts-grid").appendChild(wrap);
+  return wrap;
+}
+
+// ── Chart 1: Repo → Language Sankey ───────────────────────────────────────
+
+(function() {
+  const repos = (DATA.repos_list || []).filter(r => Object.keys(r.languages || {}).length > 0);
+  if (!repos.length || typeof d3.sankey !== "function") return;
+
+  const allRepos = [...repos]
+    .sort((a, b) => {
+      const aBytes = Object.values(a.languages || {}).reduce((sum, value) => sum + value, 0);
+      const bBytes = Object.values(b.languages || {}).reduce((sum, value) => sum + value, 0);
+      return bBytes - aBytes;
+    });
+
+  const languageTotals = {};
+  allRepos.forEach(repo => {
+    Object.entries(repo.languages || {}).forEach(([lang, bytes]) => {
+      languageTotals[lang] = (languageTotals[lang] || 0) + bytes;
+    });
+  });
+
+  const allLanguages = new Set(
+    Object.entries(languageTotals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([lang]) => lang)
+  );
+
+  const repoNodes = allRepos.map(repo => ({ id: `repo:${repo.name}`, name: repo.name, side: "repo" }));
+  const langNodes = [...allLanguages].map(lang => ({ id: `lang:${lang}`, name: lang, side: "lang" }));
+  const links = [];
+
+  allRepos.forEach(repo => {
+    Object.entries(repo.languages || {}).forEach(([lang, bytes]) => {
+      links.push({
+        source: `repo:${repo.name}`,
+        target: `lang:${lang}`,
+        value: bytes,
+        repo: repo.name,
+        language: lang,
+      });
+    });
+  });
+
+  if (!links.length) return;
+
+  const card = addChartCard("🌊 Repository → Language Flow", "chart-card-full");
+  card.insertAdjacentHTML("beforeend", '<div class="sankey-caption">All repositories flow into every detected language using repository language byte counts.</div>');
+  card.insertAdjacentHTML(
+    "beforeend",
+    '<div class="sankey-toolbar">' +
+      '<input class="sankey-search" type="text" placeholder="Search repos or languages..." />' +
+      '<button class="sankey-button" type="button">Reset Focus</button>' +
+      '<span class="sankey-status">Hover or click a node to isolate its flows.</span>' +
+    '</div>'
+  );
+
+  const searchInput = card.querySelector(".sankey-search");
+  const resetButton = card.querySelector(".sankey-button");
+  const status = card.querySelector(".sankey-status");
+
+  const W = 980;
+  const H = Math.max(520, Math.max(repoNodes.length, langNodes.length) * 24);
+  const margin = { t: 8, r: 170, b: 8, l: 170 };
+  const svg = d3.select(card).append("svg").attr("viewBox", `0 0 ${W} ${H}`);
+
+  const sankey = d3.sankey()
+    .nodeId(d => d.id)
+    .nodeWidth(14)
+    .nodePadding(10)
+    .nodeAlign(d3.sankeyJustify)
+    .extent([[margin.l, margin.t], [W - margin.r, H - margin.b]]);
+
+  const graph = sankey({
+    nodes: [...repoNodes, ...langNodes].map(d => ({ ...d })),
+    links: links.map(d => ({ ...d })),
+  });
+
+  const linksByNodeId = new Map(graph.nodes.map(node => [node.id, [...node.sourceLinks, ...node.targetLinks]]));
+
+  function getRelatedNodeIds(nodeId) {
+    const related = new Set([nodeId]);
+    (linksByNodeId.get(nodeId) || []).forEach(link => {
+      related.add(link.source.id);
+      related.add(link.target.id);
+    });
+    return related;
+  }
+
+  let pinnedNodeId = null;
+  let hoveredNodeId = null;
+  let hoveredLink = null;
+
+  const linkSelection = svg.append("g")
+    .selectAll("path")
+    .data(graph.links)
+    .join("path")
+    .attr("d", d3.sankeyLinkHorizontal())
+    .attr("fill", "none")
+    .attr("stroke", d => LANG_COLORS[d.language] || "#8b949e")
+    .attr("stroke-opacity", 0.42)
+    .attr("stroke-width", d => Math.max(1, d.width))
+    .style("cursor", "pointer")
+    .on("mouseenter", (_, d) => {
+      hoveredLink = d;
+      updateSankeyState();
+    })
+    .on("mousemove", (evt, d) => showTip(
+      `<strong>${d.repo}</strong><br/>${d.language}<br/>${fmt(d.value)} bytes`, evt))
+    .on("mouseleave", () => {
+      hoveredLink = null;
+      hideTip();
+      updateSankeyState();
+    });
+
+  const node = svg.append("g")
+    .selectAll("g")
+    .data(graph.nodes)
+    .join("g")
+    .style("cursor", "pointer")
+    .on("mouseenter", (_, d) => {
+      hoveredNodeId = d.id;
+      updateSankeyState();
+    })
+    .on("mouseleave", () => {
+      hoveredNodeId = null;
+      hideTip();
+      updateSankeyState();
+    })
+    .on("click", (_, d) => {
+      pinnedNodeId = pinnedNodeId === d.id ? null : d.id;
+      updateSankeyState();
+    });
+
+  const rectSelection = node.append("rect")
+    .attr("x", d => d.x0)
+    .attr("y", d => d.y0)
+    .attr("height", d => Math.max(1, d.y1 - d.y0))
+    .attr("width", d => d.x1 - d.x0)
+    .attr("rx", 3)
+    .attr("fill", d => d.side === "lang" ? (LANG_COLORS[d.name] || "#8b949e") : "#58a6ff")
+    .attr("stroke", "#0d1117")
+    .attr("stroke-width", 1)
+    .on("mousemove", (evt, d) => {
+      const total = d.value || 0;
+      const suffix = d.side === "lang" ? "language" : "repository";
+      showTip(`<strong>${d.name}</strong><br/>${fmt(total)} bytes through this ${suffix} node`, evt);
+    });
+
+  const labelSelection = node.append("text")
+    .attr("class", "sankey-node-label")
+    .attr("x", d => d.side === "repo" ? d.x0 - 8 : d.x1 + 8)
+    .attr("y", d => (d.y0 + d.y1) / 2)
+    .attr("text-anchor", d => d.side === "repo" ? "end" : "start")
+    .text(d => d.name.length > 24 ? d.name.slice(0, 21) + "..." : d.name);
+
+  function updateSankeyState() {
+    const term = searchInput.value.trim().toLowerCase();
+    const activeNodeId = hoveredNodeId || pinnedNodeId;
+
+    const focusNodeIds = activeNodeId ? getRelatedNodeIds(activeNodeId) : null;
+    const focusLinks = activeNodeId ? new Set(linksByNodeId.get(activeNodeId) || []) : null;
+
+    const matchedNodeIds = new Set(
+      term
+        ? graph.nodes.filter(node => node.name.toLowerCase().includes(term)).map(node => node.id)
+        : []
+    );
+
+    const searchNodeIds = new Set();
+    const searchLinks = new Set();
+    if (term) {
+      matchedNodeIds.forEach(nodeId => {
+        getRelatedNodeIds(nodeId).forEach(relatedId => searchNodeIds.add(relatedId));
+        (linksByNodeId.get(nodeId) || []).forEach(link => searchLinks.add(link));
+      });
+    }
+
+    const hoveredLinkNodes = hoveredLink
+      ? new Set([hoveredLink.source.id, hoveredLink.target.id])
+      : null;
+
+    const nodeOpacity = nodeData => {
+      let visible = true;
+      if (focusNodeIds) visible = visible && focusNodeIds.has(nodeData.id);
+      if (term) visible = visible && searchNodeIds.has(nodeData.id);
+      if (hoveredLinkNodes) visible = visible && hoveredLinkNodes.has(nodeData.id);
+      return visible ? 1 : 0.16;
+    };
+
+    const linkOpacity = linkData => {
+      let visible = true;
+      if (focusLinks) visible = visible && focusLinks.has(linkData);
+      if (term) visible = visible && searchLinks.has(linkData);
+      if (hoveredLink) visible = visible && hoveredLink === linkData;
+      return visible ? 0.82 : 0.06;
+    };
+
+    rectSelection
+      .attr("opacity", d => nodeOpacity(d))
+      .attr("stroke-width", d => activeNodeId === d.id ? 2 : 1)
+      .attr("stroke", d => activeNodeId === d.id ? "#e6edf3" : "#0d1117");
+
+    labelSelection
+      .attr("opacity", d => nodeOpacity(d))
+      .attr("font-weight", d => activeNodeId === d.id ? 700 : 400);
+
+    linkSelection
+      .attr("stroke-opacity", d => linkOpacity(d))
+      .attr("stroke-width", d => {
+        const base = Math.max(1, d.width);
+        if (hoveredLink === d) return Math.max(base + 1.5, base * 1.35);
+        if (focusLinks && focusLinks.has(d)) return Math.max(base + 0.75, base * 1.15);
+        return base;
+      });
+
+    if (term && matchedNodeIds.size === 0) {
+      status.textContent = `No repo or language matches for "${searchInput.value.trim()}".`;
+    } else if (pinnedNodeId) {
+      const pinnedNode = graph.nodes.find(node => node.id === pinnedNodeId);
+      status.textContent = pinnedNode
+        ? `Pinned: ${pinnedNode.name}. Click it again or use Reset Focus to clear.`
+        : "Hover or click a node to isolate its flows.";
+    } else if (hoveredLink) {
+      status.textContent = `Hovered flow: ${hoveredLink.repo} → ${hoveredLink.language}.`;
+    } else if (hoveredNodeId) {
+      const hoveredNode = graph.nodes.find(node => node.id === hoveredNodeId);
+      status.textContent = hoveredNode
+        ? `Hovered: ${hoveredNode.name}.`
+        : "Hover or click a node to isolate its flows.";
+    } else if (term) {
+      status.textContent = `${matchedNodeIds.size} direct match${matchedNodeIds.size === 1 ? "" : "es"} for "${searchInput.value.trim()}".`;
+    } else {
+      status.textContent = "Hover or click a node to isolate its flows.";
+    }
+  }
+
+  searchInput.addEventListener("input", updateSankeyState);
+  resetButton.addEventListener("click", () => {
+    pinnedNodeId = null;
+    hoveredNodeId = null;
+    hoveredLink = null;
+    searchInput.value = "";
+    hideTip();
+    updateSankeyState();
+  });
+
+  updateSankeyState();
+})();
+
+// ── Chart 2: Language Distribution (donut) ────────────────────────────────
+
+(function() {
+  const raw = DATA.language_bytes;
+  const entries = Object.entries(raw).slice(0, 12);
+  if (!entries.length) return;
+
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  const data = entries.map(([k, v]) => ({ name: k, value: v, pct: (v/total*100).toFixed(1) }));
+
+  const card = addChartCard("💬 Language Distribution");
+  const W = 480, H = 280, R = 90, rIn = 50;
+  const cx = W / 2 - 60, cy = H / 2;
+
+  const svg = d3.select(card).append("svg").attr("viewBox", `0 0 ${W} ${H}`);
+  const g = svg.append("g").attr("transform", `translate(${cx},${cy})`);
+
+  const pie = d3.pie().value(d => d.value).sort(null);
+  const arc = d3.arc().innerRadius(rIn).outerRadius(R);
+  const arcH = d3.arc().innerRadius(rIn).outerRadius(R + 8);
+
+  g.selectAll("path").data(pie(data)).join("path")
+    .attr("d", arc)
+    .attr("fill", (_, i) => color(i))
+    .attr("stroke", "#0d1117").attr("stroke-width", 2)
+    .on("mousemove", (evt, d) => showTip(`<strong>${d.data.name}</strong><br/>${d.data.pct}% (${(d.data.value/1024).toFixed(0)} KB)`, evt))
+    .on("mouseenter", function(_, d) { d3.select(this).attr("d", arcH(d)); })
+    .on("mouseleave", function(_, d) { d3.select(this).attr("d", arc(d)); hideTip(); });
+
+  g.append("text").attr("text-anchor","middle").attr("dy","0.35em")
+    .attr("fill","#e6edf3").attr("font-size",13).text("Languages");
+
+  const leg = svg.append("g").attr("transform", `translate(${cx + R + 20},${cy - data.length * 10})`);
+  data.forEach((d, i) => {
+    const row = leg.append("g").attr("transform", `translate(0,${i * 20})`).attr("class","legend-item");
+    row.append("rect").attr("width", 12).attr("height", 12).attr("rx", 2).attr("fill", color(i));
+    row.append("text").attr("x", 16).attr("y", 10).text(`${d.name} (${d.pct}%)`);
+  });
+})();
+
+// ── Chart 3: Repo Creation Timeline (scatter) ─────────────────────────────
+
+(function() {
+  const raw = DATA.repos_timeline;
+  if (!raw.length) return;
+  const data = raw.map(d => ({ ...d, date: new Date(d.created_at) }));
+
+  const card = addChartCard("📅 Repository Creation Timeline");
+  const W = 480, H = 220, pad = { t: 20, r: 20, b: 40, l: 50 };
+  const iW = W - pad.l - pad.r, iH = H - pad.t - pad.b;
+
+  const svg = d3.select(card).append("svg").attr("viewBox", `0 0 ${W} ${H}`);
+  const g = svg.append("g").attr("transform", `translate(${pad.l},${pad.t})`);
+
+  const x = d3.scaleTime().domain(d3.extent(data, d => d.date)).range([0, iW]).nice();
+  const y = d3.scaleLinear().domain([0, d3.max(data, d => d.stars) || 1]).range([iH, 0]).nice();
+  const r = d3.scaleSqrt().domain([0, d3.max(data, d => d.size_kb) || 1]).range([3, 18]);
+
+  g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`)
+    .call(d3.axisBottom(x).ticks(5).tickFormat(d3.timeFormat("%Y")));
+  g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(4).tickFormat(fmt));
+
+  g.selectAll("circle").data(data).join("circle")
+    .attr("cx", d => x(d.date)).attr("cy", d => y(d.stars))
+    .attr("r",  d => Math.max(4, r(d.size_kb)))
+    .attr("fill", d => d.is_fork ? "#d29922" : "#3fb950")
+    .attr("opacity", 0.75).attr("stroke", "#0d1117").attr("stroke-width", 1)
+    .on("mousemove", (evt, d) => showTip(
+      `<strong>${d.name}</strong><br/>
+       Created: ${new Date(d.created_at).toLocaleDateString()}<br/>
+       ⭐ ${d.stars} &nbsp;🍴 ${d.forks}<br/>
+       Size: ${(d.size_kb/1024).toFixed(1)} MB
+       ${d.is_fork ? "<br/><em>(fork)</em>" : ""}`, evt))
+    .on("mouseleave", hideTip);
+
+  const leg = svg.append("g").attr("transform", `translate(${pad.l + 10},${pad.t + 10})`);
+  [["#3fb950","Own repo"],["#d29922","Fork"]].forEach(([c, l], i) => {
+    leg.append("circle").attr("cx", i * 90).attr("cy", 0).attr("r", 5).attr("fill", c);
+    leg.append("text").attr("x", i * 90 + 9).attr("y", 4).attr("fill","#8b949e").attr("font-size",11).text(l);
+  });
+})();
+
+// ── Chart 4: Topics bubble pack ───────────────────────────────────────────
+
+(function() {
+  const raw = DATA.topic_counts;
+  const entries = Object.entries(raw);
+  if (!entries.length) return;
+
+  const data = entries.map(([name, value]) => ({ name, value }));
+  const card = addChartCard("🏷️ Top Repository Topics");
+  const W = 480, H = 260;
+
+  const svg = d3.select(card).append("svg").attr("viewBox", `0 0 ${W} ${H}`);
+  const pack = d3.pack().size([W, H]).padding(4);
+  const root = d3.hierarchy({ children: data }).sum(d => d.value);
+  pack(root);
+
+  const node = svg.selectAll("g").data(root.leaves()).join("g")
+    .attr("transform", d => `translate(${d.x},${d.y})`);
+  node.append("circle").attr("r", d => d.r).attr("fill", (_, i) => color(i)).attr("opacity", 0.85)
+    .on("mousemove", (evt, d) => showTip(`<strong>#${d.data.name}</strong><br/>${d.data.value} repo${d.data.value > 1 ? "s" : ""}`, evt))
+    .on("mouseleave", hideTip);
+  node.append("text").attr("text-anchor","middle").attr("dy","0.35em")
+    .attr("fill","#e6edf3").attr("font-size", d => Math.min(d.r * 0.55, 13))
+    .text(d => d.r > 18 ? d.data.name : "")
+    .on("mousemove", (evt, d) => showTip(`<strong>#${d.data.name}</strong><br/>${d.data.value} repo${d.data.value > 1 ? "s" : ""}`, evt))
+    .on("mouseleave", hideTip);
+})();
+
+// ── Chart 5: License Distribution (pie) ───────────────────────────────────
+
+(function() {
+  const raw = DATA.license_counts;
+  const entries = Object.entries(raw).sort((a,b) => b[1]-a[1]);
+  if (!entries.length || entries.length < 2) return;
+
+  const total = entries.reduce((s,[,v]) => s + v, 0);
+  const data  = entries.map(([k,v]) => ({ name: k, value: v, pct: (v/total*100).toFixed(1) }));
+
+  const card = addChartCard("📜 License Distribution");
+  const W = 480, H = 260, R = 90;
+  const cx = W/2 - 60, cy = H/2;
+
+  const svg = d3.select(card).append("svg").attr("viewBox", `0 0 ${W} ${H}`);
+  const g = svg.append("g").attr("transform", `translate(${cx},${cy})`);
+
+  const pie = d3.pie().value(d => d.value).sort(null);
+  const arc = d3.arc().innerRadius(0).outerRadius(R);
+  const arcH = d3.arc().innerRadius(0).outerRadius(R + 8);
+
+  g.selectAll("path").data(pie(data)).join("path")
+    .attr("d", arc).attr("fill", (_, i) => color(i + 3))
+    .attr("stroke","#0d1117").attr("stroke-width",2)
+    .on("mousemove", (evt, d) => showTip(`<strong>${d.data.name}</strong><br/>${d.data.pct}% (${d.data.value} repos)`, evt))
+    .on("mouseenter", function(_, d) { d3.select(this).attr("d", arcH(d)); })
+    .on("mouseleave", function(_, d) { d3.select(this).attr("d", arc(d)); hideTip(); });
+
+  const leg = svg.append("g").attr("transform", `translate(${cx + R + 20},${cy - data.length * 10})`);
+  data.forEach((d, i) => {
+    const row = leg.append("g").attr("transform", `translate(0,${i * 20})`).attr("class","legend-item");
+    row.append("rect").attr("width",12).attr("height",12).attr("rx",2).attr("fill",color(i+3));
+    row.append("text").attr("x",16).attr("y",10).text(`${d.name} (${d.pct}%)`);
+  });
+})();
+
+// ── Repositories Tab ──────────────────────────────────────────────────────
+
+(function() {
+  const repos = DATA.repos_list || [];
+  if (!repos.length) return;
+
+  // Approximate bytes-per-line by language (rough heuristics)
+  const BPL = {
+    JavaScript:1.8,TypeScript:1.9,Python:2.5,Java:2.2,
+    "C++":2.0,"C#":2.2,C:1.8,Go:2.2,Rust:2.1,
+    Ruby:2.4,PHP:2.0,Swift:2.1,Kotlin:2.1,Scala:2.3,
+    HTML:0.8,CSS:1.0,SCSS:1.1,Shell:2.2,PowerShell:2.2,
+    Lua:2.2,Perl:2.2,R:2.2,MATLAB:2.0,Dart:2.1,
+    Elixir:2.4,Haskell:2.5,Clojure:2.4,Vue:1.5,
+  };
+
+  function approxLOC(lang, bytes) {
+    const bpl = BPL[lang] || 2.0;
+    const lines = Math.round(bytes / (bpl * 40));
+    if (lines >= 1000000) return (lines/1000000).toFixed(1) + "M";
+    if (lines >= 1000)    return (lines/1000).toFixed(1) + "k";
+    return lines.toString();
+  }
+
+  function miniPieSVG(langs) {
+    const entries = Object.entries(langs || {}).slice(0, 8);
+    const total = entries.reduce((s, [,v]) => s + v, 0);
+    if (!total || entries.length === 0) return '<svg width="56" height="56"></svg>';
+    const R = 24, cx = 28, cy = 28;
+    let angle = -Math.PI / 2;
+    const paths = entries.map(([lang, bytes]) => {
+      const slice = (bytes / total) * 2 * Math.PI;
+      if (slice < 0.001) return "";
+      const x1 = cx + R * Math.cos(angle);
+      const y1 = cy + R * Math.sin(angle);
+      angle += slice;
+      const x2 = cx + R * Math.cos(angle);
+      const y2 = cy + R * Math.sin(angle);
+      const large = slice > Math.PI ? 1 : 0;
+      const c = LANG_COLORS[lang] || "#8b949e";
+      return `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${c}" opacity="0.92"/>`;
+    });
+    // inner circle cutout
+    const inner = `<circle cx="${cx}" cy="${cy}" r="10" fill="#161b22"/>`;
+    return `<svg width="56" height="56" viewBox="0 0 56 56">${paths.join("")}${inner}</svg>`;
+  }
+
+  // Populate language filter
+  const langs = [...new Set(repos.map(r => r.language).filter(Boolean))].sort();
+  const langSel = document.getElementById("repo-filter-lang");
+  langs.forEach(l => {
+    const opt = document.createElement("option");
+    opt.value = l; opt.textContent = l;
+    langSel.appendChild(opt);
+  });
+
+  let filtered = [...repos];
+
+  function applyFilters() {
+    const q    = document.getElementById("repo-search").value.trim().toLowerCase();
+    const sort = document.getElementById("repo-sort").value;
+    const lang = document.getElementById("repo-filter-lang").value;
+    const type = document.getElementById("repo-filter-type").value;
+
+    filtered = repos.filter(r => {
+      if (q && !r.name.toLowerCase().includes(q) && !(r.description||"").toLowerCase().includes(q)) return false;
+      if (lang && r.language !== lang) return false;
+      if (type === "source"   && r.is_fork)     return false;
+      if (type === "fork"     && !r.is_fork)    return false;
+      if (type === "archived" && !r.is_archived) return false;
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      if (sort === "stars")   return b.stars - a.stars;
+      if (sort === "forks")   return b.forks - a.forks;
+      if (sort === "issues")  return b.open_issues - a.open_issues;
+      if (sort === "size")    return b.size_kb - a.size_kb;
+      if (sort === "updated") return new Date(b.pushed_at) - new Date(a.pushed_at);
+      if (sort === "name")    return a.name.localeCompare(b.name);
+      return 0;
+    });
+
+    renderCards();
+  }
+
+  function esc(s) {
+    return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function renderCards() {
+    const grid = document.getElementById("repo-grid");
+    document.getElementById("repo-count").textContent = `${filtered.length} of ${repos.length} repositories`;
+
+    grid.innerHTML = filtered.map(r => {
+      const badges = [
+        r.is_fork     ? `<span class="badge badge-fork">Fork</span>`     : "",
+        r.is_archived ? `<span class="badge badge-archived">Archived</span>` : "",
+        r.visibility === "private" ? `<span class="badge badge-private">Private</span>` : "",
+      ].join("");
+      const topicsHtml = (r.topics||[]).slice(0, 5).map(t =>
+        `<span class="topic-tag">#${esc(t)}</span>`).join("");
+      const desc = r.description
+        ? `<div class="repo-desc">${esc(r.description)}</div>`
+        : `<div class="repo-desc empty">No description</div>`;
+      const sizeStr = r.size_kb < 1024
+        ? r.size_kb + " KB"
+        : (r.size_kb/1024).toFixed(1) + " MB";
+
+      // Language pie + list
+      const langEntries = Object.entries(r.languages || {}).slice(0, 8);
+      const langTotal = langEntries.reduce((s, [,v]) => s + v, 0);
+      const pieSVG = miniPieSVG(r.languages);
+      const langListHtml = langEntries.map(([lang, bytes]) => {
+        const pct = langTotal ? (bytes / langTotal * 100).toFixed(1) : 0;
+        const loc = approxLOC(lang, bytes);
+        const c = LANG_COLORS[lang] || "#8b949e";
+        return `<div class="repo-lang-row">
+          <span class="lang-dot" style="background:${c}"></span>
+          <span class="lang-name">${esc(lang)}</span>
+          <div class="repo-lang-bar-wrap"><div class="repo-lang-bar" style="width:${pct}%;background:${c}"></div></div>
+          <span class="lang-loc">~${loc} lines</span>
+        </div>`;
+      }).join("");
+      const langSection = (langEntries.length > 0)
+        ? `<div class="repo-lang-section">
+             <div class="repo-lang-pie" title="Language breakdown">${pieSVG}</div>
+             <div class="repo-lang-list">${langListHtml}</div>
+           </div>`
+        : "";
+
+      // Dates
+      const createdStr = r.created_at
+        ? new Date(r.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})
+        : "—";
+      const updatedStr = relTime(r.pushed_at);
+
+      return `
+      <div class="repo-card">
+        <div class="repo-card-header">
+          <a class="repo-name" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a>
+          <div class="repo-badges">${badges}</div>
+        </div>
+        ${desc}
+        <div class="repo-stats">
+          <div class="repo-stat">⭐ <span class="num">${r.stars.toLocaleString()}</span></div>
+          <div class="repo-stat">🍴 <span class="num">${r.forks.toLocaleString()}</span></div>
+          <div class="repo-stat">⚠️ <span class="num">${r.open_issues.toLocaleString()}</span></div>
+          <div class="repo-stat">💾 <span class="num">${sizeStr}</span></div>
+        </div>
+        ${langSection}
+        ${topicsHtml ? `<div class="repo-topics">${topicsHtml}</div>` : ""}
+        <div class="repo-dates">
+          <div class="repo-date">📅 Created <strong>${createdStr}</strong></div>
+          <div class="repo-date">🔄 Updated <strong>${updatedStr}</strong></div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  document.getElementById("repo-search").addEventListener("input", applyFilters);
+  document.getElementById("repo-sort").addEventListener("change", applyFilters);
+  document.getElementById("repo-filter-lang").addEventListener("change", applyFilters);
+  document.getElementById("repo-filter-type").addEventListener("change", applyFilters);
+
+  applyFilters();
+})();
+</script>
+</body>
+</html>
