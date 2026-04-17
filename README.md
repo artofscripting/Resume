@@ -4,6 +4,8 @@
 
 📧 artofscripting@gmail.com | 📱 281-505-0561
 
+https://artofscripting.github.io/Resume/
+
 ---
 
 ## Cyber Security Expert
